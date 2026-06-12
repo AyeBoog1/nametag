@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Орієнтир v3</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #0c0e11; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+// Ukrainian field definitions (label + hint)
+const F = {
+  stat:        { label: "Стать",                   hint: "чоловік / жінка" },
+  vik:         { label: "Вік (на вигляд)",          hint: "підлітковий · юнацький · молодий (22–35) · середній (36–60) · похилий · старечий" },
+  antrop:      { label: "Антропологічний тип",      hint: "слов'янин · кавказець · азіат · arab · циган · чорношкірий…" },
+  zrist:       { label: "Зріст",                    hint: "низький <165 · середній 166–175 · високий 176–185 · дуже високий >185 см" },
+  statura:     { label: "Статура",                  hint: "худа/щупла · середня · повна/тучна · кремезна/атлетична" },
+  volossya:    { label: "Волосся",                  hint: "форма (пряме/хвилясте/кучеряве) · довжина · залисини · колір (темне/світле/руде/сиве)" },
+  prykmety:    { label: "Особливі прикмети",         hint: "шрами · татуювання · родимки · вади · ампутації — частина тіла, опис" },
+  odyag:       { label: "Одяг / прикметні речі",    hint: "стиль (робочий/спортивний/класичний) · колір · сумка" },
+  oblychchya:  { label: "Обличчя",                  hint: "форма (овальне/кругле/прямокутне/трикутне/видовжене) · шкіра" },
+  lob:         { label: "Лоб",                      hint: "високий / середній / низький" },
+  vukha:       { label: "Вуха",                     hint: "великі/середні/малі · відстовбурчені / прилягаючі" },
+  brovy:       { label: "Брови",                    hint: "колір · ширина (широкі/вузькі) · густі/зрослись" },
+  ochi:        { label: "Очі",                      hint: "величина · колір (чорні/карі/сірі/блакитні/зелені) · косоокість" },
+  nis:         { label: "Ніс",                      hint: "з горбинкою · прямий · курносий · приплюснутий · задертий" },
+  rot_huby:    { label: "Рот / губи",               hint: "рот (великий/середній/малий) · губи (товсті/середні/тонкі)" },
+  zuby:        { label: "Зуби",                     hint: "рідкі/криві/щербаті · коронки · відсутні передні" },
+  pidboriddya: { label: "Підборіддя",               hint: "пряме / виступаюче / скошене / роздвоєне" },
+  rosl:        { label: "Вуса / борода",            hint: "є/немає · розмір (великі/середні/малі)" },
+  shyya:       { label: "Шия",                      hint: "довга/середня/коротка · товста/тонка · кадик" },
+  plechi:      { label: "Плечі",                    hint: "вузькі/середні/широкі · опущені/горизонтальні/підняті" },
+  ruky:        { label: "Руки / кисті",             hint: "довжина · кисті (грубі/ніжні/чисті/брудні)" },
+  spyna:       { label: "Постава / спина",          hint: "пряма / сутула / горб" },
+  nohy:        { label: "Ноги",                     hint: "прямі / О-подібні / Х-подібні" },
+  khoda:       { label: "Хода",                     hint: "пряма / шаркання / кульгавість / перевалюючись" },
+  mova:        { label: "Мова / голос",             hint: "акцент · заїкання · картавість · жаргон" },
+  zvychky:     { label: "Звички / манери",          hint: "паління · жестикуляція · шульга" },
+  dodatk:      { label: "Окуляри / інше",           hint: "окуляри · слуховий апарат · перука · ціпок" },
+};
+
+// English labels used to build the BFL prompt
+const E = {
+  stat:"gender", vik:"apparent age", antrop:"ethnic appearance",
+  zrist:"height", statura:"body build", volossya:"hair",
+  prykmety:"distinguishing marks", odyag:"clothing",
+  oblychchya:"face shape", lob:"forehead", vukha:"ears",
+  brovy:"eyebrows", ochi:"eyes", nis:"nose",
+  rot_huby:"mouth and lips", zuby:"teeth", pidboriddya:"chin",
+  rosl:"facial hair", shyya:"neck", plechi:"shoulders",
+  ruky:"hands", spyna:"posture", nohy:"legs",
+  khoda:"gait", mova:"speech", zvychky:"habits", dodatk:"accessories",
+};
+
+const EXPRESS_KEYS = ["stat","vik","antrop","zrist","statura","volossya","prykmety","odyag"];
+
+const DETAILED_GROUPS = [
+  { g: "Загально-фізичні (обов'язкові)", keys: ["stat","vik","antrop"] },
+  { g: "Голова та обличчя", keys: ["zrist","statura","volossya","oblychchya","lob","vukha","brovy","ochi","nis","rot_huby","zuby","pidboriddya","rosl"] },
+  { g: "Будова тіла", keys: ["shyya","plechi","ruky","spyna","nohy"] },
+  { g: "Особливі прикмети", keys: ["prykmety"] },
+  { g: "Функціональні", keys: ["khoda","mova","zvychky"] },
+  { g: "Постійні", keys: ["odyag","dodatk"] },
+];
+
+const activeKeys = (mode) => mode === "express" ? EXPRESS_KEYS : DETAILED_GROUPS.flatMap((g) => g.keys);
+
+const buildPrompt = (keys, values) => {
+  const filled = keys.filter((k) => values[k] && values[k].trim());
+  if (!filled.length) return "";
+  const desc = filled.map((k) => `${E[k]}: ${values[k]}`).join(", ");
+  return `photorealistic forensic frontal portrait composite, neutral plain background, no text, highly detailed face. ${desc}`;
+};
+
+const C = {
+  bg:"#0c0e11", panel:"#14181e", panel2:"#191e25", border:"#2a313b",
+  text:"#e9e7e1", mut:"#8b929c", faint:"#5b626c", amber:"#ff9b30", amberDim:"#7a4f1c",
+  red:"#ff4646", green:"#3ddc84", blue:"#4aa8ff",
+};
+
+const btn = (bg, fg, busy) => ({
+  padding:"11px 18px", border:"none", borderRadius:4,
+  cursor: busy ? "wait" : "pointer",
+  background: bg, color: fg,
+  fontFamily:"'Oswald',sans-serif", fontWeight:600, fontSize:14.5,
+  letterSpacing:1.2, textTransform:"uppercase",
+  display:"inline-flex", alignItems:"center", justifyContent:"center", gap:9,
+});
+
+function Spin() {
+  return <span style={{ width:14, height:14, border:"2px solid #1a120544", borderTopColor:"#1a1205", borderRadius:"50%", animation:"spin .7s linear infinite", display:"inline-block", flexShrink:0 }} />;
+}
+
+function Seg({ active, onClick, label, sub, C }) {
+  return (
+    <button onClick={onClick} style={{ padding:"8px 14px", borderRadius:4, cursor:"pointer", border:`1px solid ${active ? C.amber : C.border}`, background: active ? `${C.amber}1a` : "transparent", color: active ? C.amber : C.mut, fontFamily:"'Oswald',sans-serif", fontSize:13.5, letterSpacing:1, textTransform:"uppercase", lineHeight:1.2 }}>
+      {label}{sub && <span style={{ display:"block", fontSize:9.5, letterSpacing:1, opacity:.8 }}>{sub}</span>}
+    </button>
+  );
+}
+
+function Banner({ C, text }) {
+  return <div style={{ marginTop:16, padding:"10px 14px", background:`${C.amber}10`, border:`1px solid ${C.amberDim}`, borderLeft:`3px solid ${C.amber}`, fontSize:12.5, color:"#e7c89a", lineHeight:1.5 }}>{text}</div>;
+}
+
+function SectionTitle({ C, t }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:12, margin:"22px 0 10px" }}>
+      <span style={{ fontFamily:"'Oswald',sans-serif", fontSize:16, letterSpacing:1.5, textTransform:"uppercase", color:C.text }}>{t}</span>
+      <span style={{ flex:1, height:1, background:C.border }} />
+    </div>
+  );
+}
+
+function FieldGrid({ C, keys, values, setField }) {
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))", gap:10 }}>
+      {keys.map((k) => {
+        const filled = values[k] && values[k].trim();
+        return (
+          <div key={k} style={{ background:C.panel, border:`1px solid ${filled ? C.amberDim : C.border}`, borderRadius:4, padding:"10px 12px" }}>
+            <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:10.5, letterSpacing:.5, color: filled ? C.amber : C.mut, textTransform:"uppercase", marginBottom:5, display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ width:6, height:6, borderRadius:"50%", background: filled ? C.green : C.faint, display:"inline-block" }} />
+              {F[k].label}
+            </div>
+            <input
+              value={values[k] || ""}
+              onChange={(e) => setField(k, e.target.value)}
+              placeholder={F[k].hint}
+              style={{ width:"100%", boxSizing:"border-box", background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:3, padding:"8px 9px", fontSize:13.5, lineHeight:1.4, fontFamily:"'IBM Plex Sans',sans-serif", outline:"none" }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BflKeyModal({ C, onSave }) {
+  const [k, setK] = useState("");
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.82)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div style={{ background:C.panel, border:`1px solid ${C.border}`, borderRadius:6, padding:28, maxWidth:420, width:"100%" }}>
+        <div style={{ fontFamily:"'Oswald',sans-serif", fontSize:18, color:C.amber, letterSpacing:1, textTransform:"uppercase", marginBottom:10 }}>BFL API Key</div>
+        <div style={{ fontSize:13, color:C.mut, marginBottom:16, lineHeight:1.6 }}>
+          Ключ Black Forest Labs для генерації зображень.<br />
+          Зберігається лише локально у вашому браузері.<br />
+          <span style={{ color:C.amber }}>dashboard.bfl.ai → API Keys</span>
+        </div>
+        <input
+          value={k}
+          onChange={(e) => setK(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && k.trim() && onSave(k.trim())}
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          style={{ width:"100%", background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:4, padding:"10px 12px", fontSize:14, fontFamily:"'IBM Plex Mono',monospace", outline:"none", marginBottom:14 }}
+        />
+        <button
+          onClick={() => k.trim() && onSave(k.trim())}
+          disabled={!k.trim()}
+          style={{ ...btn(C.amber,"#1a1205",!k.trim()), width:"100%", opacity: k.trim() ? 1 : 0.5 }}
+        >
+          Зберегти ключ
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [mode, setMode] = useState("express");
+  const [values, setValues] = useState({});
+  const [promptEn, setPromptEn] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState(null);
+  const [genStatus, setGenStatus] = useState("");
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [interim, setInterim] = useState("");
+  const [supported, setSupported] = useState(true);
+  const recRef = useRef(null);
+
+  const [bflKey, setBflKey] = useState(() => localStorage.getItem("oriyentir_bfl_key") || "");
+  const [showBflModal, setShowBflModal] = useState(false);
+
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setSupported(false); return; }
+    const rec = new SR();
+    rec.lang = "uk-UA"; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (e) => {
+      let fin = "", inter = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t + " "; else inter += t;
+      }
+      if (fin) setTranscript((p) => (p + " " + fin).replace(/\s+/g, " ").trim());
+      setInterim(inter);
+    };
+    rec.onend = () => { setListening(false); setInterim(""); };
+    rec.onerror = () => { setListening(false); setInterim(""); };
+    recRef.current = rec;
+    return () => { try { rec.stop(); } catch(e) {} };
+  }, []);
+
+  const toggleMic = () => {
+    const rec = recRef.current; if (!rec) return;
+    if (listening) { rec.stop(); setListening(false); }
+    else { try { rec.start(); setListening(true); } catch(e) {} }
+  };
+
+  const saveBflKey = (k) => { localStorage.setItem("oriyentir_bfl_key", k); setBflKey(k); setShowBflModal(false); };
+
+  const doGenerate = async () => {
+    const keys = activeKeys(mode);
+    const filled = keys.filter((k) => values[k] && values[k].trim());
+    if (!filled.length) { setError("Спершу заповніть хоча б кілька ознак."); return; }
+
+    const key = bflKey || localStorage.getItem("oriyentir_bfl_key") || "";
+    if (!key) { setShowBflModal(true); return; }
+
+    const prompt = buildPrompt(keys, values);
+    setPromptEn(prompt);
+    setGenerating(true);
+    setError("");
+    setGeneratedImage(null);
+    setGenStatus("Надсилаємо запит…");
+
+    try {
+      // Step 1: submit generation task
+      const sub = await fetch("https://api.bfl.ai/v1/flux-pro-1.1", {
+        method: "POST",
+        headers: { "accept":"application/json", "x-key": key, "Content-Type":"application/json" },
+        body: JSON.stringify({ prompt, width: 768, height: 1024 }),
+      });
+      if (!sub.ok) {
+        const body = await sub.json().catch(() => ({}));
+        throw new Error(`HTTP ${sub.status} — ${body.detail || body.message || JSON.stringify(body)}`);
+      }
+      const subData = await sub.json();
+      console.log("[BFL] submit:", subData);
+      const { id, polling_url } = subData;
+      if (!id) throw new Error("Відповідь BFL не містить id: " + JSON.stringify(subData));
+
+      // Use returned polling_url; fall back to get_result if absent
+      const pollUrl = polling_url || `https://api.bfl.ai/v1/get_result?id=${id}`;
+      setGenStatus(`Генерація (id: ${id.slice(0,8)}…)`);
+
+      // Step 2: poll until Ready or error
+      let found = false;
+      for (let i = 0; i < 70; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        setGenStatus(`Очікуємо результат… ${(i + 1) * 2}с`);
+        const poll = await fetch(pollUrl, { headers: { "accept":"application/json", "x-key": key } });
+        if (!poll.ok) throw new Error(`Poll HTTP ${poll.status}`);
+        const data = await poll.json();
+        console.log(`[BFL] poll ${i}:`, data.status, data);
+        if (data.status === "Ready") {
+          const imgUrl = data.result?.sample;
+          if (!imgUrl) throw new Error("Ready, але URL відсутній: " + JSON.stringify(data));
+          setGeneratedImage(imgUrl);
+          found = true;
+          break;
+        }
+        if (["Error","Failed","Content Moderated"].includes(data.status)) {
+          throw new Error("Flux відхилив запит: " + data.status);
+        }
+      }
+      if (!found) throw new Error("Timeout: зображення не готове за 140 с");
+
+    } catch(e) {
+      console.error("[BFL] error:", e);
+      const hint = e.message.includes("fetch") ? " (можлива проблема CORS — відкрийте файл через локальний сервер або через VS Code Live Server)" : "";
+      setError("Помилка: " + e.message + hint);
+    }
+    setGenStatus("");
+    setGenerating(false);
+  };
+
+  const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
+  const resetAll = () => { setValues({}); setTranscript(""); setInterim(""); setPromptEn(""); setGeneratedImage(null); setError(""); };
+  const copyPrompt = () => { if (promptEn) navigator.clipboard.writeText(promptEn).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }); };
+
+  const keys = activeKeys(mode);
+  const filledCount = keys.filter((k) => values[k] && values[k].trim()).length;
+
+  return (
+    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, fontFamily:"'IBM Plex Sans',sans-serif" }}>
+      <style>{`
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,70,70,.55);}50%{box-shadow:0 0 0 16px rgba(255,70,70,0);}}
+        @keyframes spin{to{transform:rotate(360deg);}}
+        @keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+        @keyframes imgfade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+        input::placeholder,textarea::placeholder{color:#5b626c;}
+        input:focus,textarea:focus{border-color:#ff9b30!important;}
+      `}</style>
+
+      {showBflModal && <BflKeyModal C={C} onSave={saveBflKey} />}
+
+      <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(#2a313b22 1px,transparent 1px),linear-gradient(90deg,#2a313b22 1px,transparent 1px)`, backgroundSize:"44px 44px", pointerEvents:"none" }} />
+
+      <div style={{ position:"relative", maxWidth:880, margin:"0 auto", padding:"26px 18px 60px" }}>
+
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", gap:10, borderBottom:`1px solid ${C.border}`, paddingBottom:14, flexWrap:"wrap" }}>
+          <h1 style={{ margin:0, fontFamily:"'Oswald',sans-serif", fontWeight:700, fontSize:32, letterSpacing:2, textTransform:"uppercase", color:C.amber }}>Орієнтир</h1>
+          <span style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:12, color:C.mut, letterSpacing:1 }}>словесний портрет · v3</span>
+          <div style={{ flex:1 }} />
+          <button onClick={() => setShowBflModal(true)} style={{ padding:"5px 12px", background: bflKey ? `${C.green}22` : `${C.amber}22`, border:`1px solid ${bflKey ? C.green : C.amber}`, borderRadius:3, cursor:"pointer", color: bflKey ? C.green : C.amber, fontFamily:"'IBM Plex Mono',monospace", fontSize:11, letterSpacing:.5 }}>
+            {bflKey ? "✓ BFL Key" : "⚙ BFL Key"}
+          </button>
+        </div>
+
+        {/* Mode selector */}
+        <div style={{ display:"flex", gap:8, marginTop:16 }}>
+          <Seg active={mode==="express"} onClick={() => setMode("express")} label="Патрульний" sub="мінімум" C={C} />
+          <Seg active={mode==="detailed"} onClick={() => setMode("detailed")} label="Оперативник" sub="повний" C={C} />
+        </div>
+
+        <Banner C={C} text={mode==="express"
+          ? "Патрульний: обов'язковий мінімум ознак. Заповнюйте за підказками в полях — вручну або надиктуйте та перенесіть."
+          : "Оперативник: повна габітологічна структура. Заповнюйте за підказками — вручну або надиктуйте та перенесіть."} />
+
+        {/* Voice notes */}
+        <div style={{ marginTop:16, background:C.panel, border:`1px solid ${C.border}`, borderRadius:4, padding:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+            <button
+              onClick={toggleMic}
+              disabled={!supported}
+              style={{ width:54, height:54, borderRadius:"50%", flexShrink:0, cursor: supported ? "pointer" : "not-allowed", border:`2px solid ${listening ? C.red : C.amber}`, background: listening ? C.red : "transparent", color: listening ? "#fff" : C.amber, fontSize:22, animation: listening ? "pulse 1.4s infinite" : "none" }}
+            >{listening ? "■" : "🎙"}</button>
+            <div style={{ flex:1 }}>
+              <div style={{ fontFamily:"'Oswald',sans-serif", fontSize:14, letterSpacing:1, textTransform:"uppercase", color: listening ? C.red : C.text }}>
+                {listening ? <span style={{ animation:"blink 1s infinite" }}>● Запис триває…</span> : (supported ? "Нотатки зі слів свідка" : "Голос недоступний")}
+              </div>
+              <div style={{ fontSize:12, color:C.mut, marginTop:3 }}>
+                {supported ? "Chrome · надиктуйте, потім перенесіть у поля нижче" : "Заповніть поля нижче вручну"}
+              </div>
+            </div>
+          </div>
+          <textarea
+            value={transcript + (interim ? " " + interim : "")}
+            onChange={(e) => setTranscript(e.target.value)}
+            rows={3}
+            placeholder="Надиктуйте або впишіть опис свідка для нотаток, а потім вручну перенесіть у поля нижче…"
+            style={{ width:"100%", marginTop:12, boxSizing:"border-box", resize:"vertical", background:C.bg, color:C.text, border:`1px solid ${C.border}`, borderRadius:4, padding:11, fontSize:14, lineHeight:1.55, fontFamily:"'IBM Plex Sans',sans-serif", outline:"none" }}
+          />
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10, flexWrap:"wrap", gap:8 }}>
+            <button onClick={resetAll} style={{ padding:"9px 14px", borderRadius:4, cursor:"pointer", background:"transparent", border:`1px solid ${C.border}`, color:C.mut, fontFamily:"'Oswald',sans-serif", fontSize:13, letterSpacing:1, textTransform:"uppercase" }}>
+              Скинути все
+            </button>
+            <span style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:12.5, color: filledCount ? C.green : C.mut }}>
+              заповнено {filledCount} / {keys.length}
+            </span>
+          </div>
+        </div>
+
+        {/* Field grid */}
+        <div style={{ marginTop:18 }}>
+          {mode === "express"
+            ? <FieldGrid C={C} keys={EXPRESS_KEYS} values={values} setField={setField} />
+            : DETAILED_GROUPS.map((grp, i) => (
+                <div key={i} style={{ marginBottom:16 }}>
+                  <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:11.5, letterSpacing:1, color:C.blue, textTransform:"uppercase", margin:"12px 0 7px" }}>{grp.g}</div>
+                  <FieldGrid C={C} keys={grp.keys} values={values} setField={setField} />
+                </div>
+              ))
+          }
+        </div>
+
+        {/* Generation section */}
+        <SectionTitle C={C} t="Генерація портрета · Flux Pro" />
+        <div style={{ background:C.panel2, border:`1px solid ${C.border}`, borderRadius:4, padding:16 }}>
+
+          <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
+            <button onClick={doGenerate} disabled={generating} style={btn(C.amber,"#1a1205",generating)}>
+              {generating && <Spin />}
+              {generating ? "Генерація…" : "Згенерувати портрет"}
+            </button>
+            {promptEn && !generating && (
+              <button onClick={copyPrompt} style={{ padding:"11px 14px", borderRadius:4, cursor:"pointer", background: copied ? C.green : "transparent", border:`1px solid ${copied ? C.green : C.border}`, color: copied ? "#06121f" : C.mut, fontFamily:"'Oswald',sans-serif", fontSize:13, letterSpacing:1, textTransform:"uppercase" }}>
+                {copied ? "✓ Скопійовано" : "Копіювати промпт"}
+              </button>
+            )}
+          </div>
+
+          {generating && genStatus && (
+            <div style={{ marginTop:14, fontSize:13, color:C.amber, display:"flex", alignItems:"center", gap:8, fontFamily:"'IBM Plex Mono',monospace" }}>
+              <span style={{ width:8, height:8, borderRadius:"50%", background:C.amber, display:"inline-block", animation:"blink 1s infinite", flexShrink:0 }} />
+              {genStatus}
+            </div>
+          )}
+
+          {promptEn && (
+            <div style={{ marginTop:12, fontFamily:"'IBM Plex Mono',monospace", fontSize:12, lineHeight:1.6, color:"#cfe3d6", whiteSpace:"pre-wrap", background:C.bg, padding:12, borderRadius:4, border:`1px solid ${C.border}` }}>
+              {promptEn}
+            </div>
+          )}
+
+          {error && (
+            <div style={{ marginTop:12, padding:"10px 14px", background:`${C.red}15`, border:`1px solid ${C.red}55`, borderLeft:`3px solid ${C.red}`, borderRadius:4, color:C.red, fontSize:13, lineHeight:1.55, fontFamily:"'IBM Plex Mono',monospace", wordBreak:"break-word" }}>
+              {error}
+            </div>
+          )}
+
+          {generatedImage && (
+            <div style={{ marginTop:18, animation:"imgfade .4s ease" }}>
+              <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:11, letterSpacing:1, color:C.green, textTransform:"uppercase", marginBottom:10 }}>✓ Зображення готове</div>
+              <img
+                src={generatedImage}
+                alt="Згенерований портрет"
+                style={{ display:"block", width:"100%", maxWidth:340, borderRadius:6, border:`2px solid ${C.border}`, boxShadow:"0 6px 32px #0009" }}
+              />
+              <div style={{ marginTop:12, display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+                <a
+                  href={generatedImage}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ ...btn(C.green,"#06121f",false), textDecoration:"none", fontSize:13.5 }}
+                >
+                  ⬇ Відкрити / зберегти
+                </a>
+                <span style={{ fontSize:11.5, color:C.faint, fontFamily:"'IBM Plex Mono',monospace" }}>посилання діє ~10 хв</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop:28, paddingTop:14, borderTop:`1px solid ${C.border}`, fontSize:11.5, color:C.mut, lineHeight:1.6, fontFamily:"'IBM Plex Mono',monospace" }}>
+          ПРОТОТИП · поля заповнюються вручну або за нотатками свідка · генерація зображень: BFL Flux Pro
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
